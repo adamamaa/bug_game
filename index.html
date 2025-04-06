@@ -42,6 +42,18 @@
         .hidden {
             display: none;
         }
+        #debug-panel {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px dashed #666;
+            background-color: #f5f5f5;
+            width: 400px;
+            text-align: center;
+        }
+        #debug-info {
+            font-size: 0.8em;
+            color: #555;
+        }
     </style>
 </head>
 <body>
@@ -50,6 +62,14 @@
     <canvas id="gameCanvas" width="400" height="600" class="hidden"></canvas>
     <div id="controls-info" class="hidden">기기를 기울여 무당벌레를 움직이세요!<br>떨어지는 아이템을 획득하세요! (센서 권한 허용 필요)</div>
     <div id="shield-info" class="hidden">보호막 활성화! (화면 터치)</div>
+    
+    <!-- 디버깅 패널 추가 -->
+    <div id="debug-panel" class="hidden">
+        <button id="spawn-enemy">적 생성</button>
+        <button id="spawn-item">아이템 생성</button>
+        <button id="debug-info-btn">디버그 정보</button>
+        <div id="debug-info"></div>
+    </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
@@ -57,6 +77,34 @@
         const shieldInfoDiv = document.getElementById('shield-info');
         const controlsInfoDiv = document.getElementById('controls-info');
         const startButton = document.getElementById('start-button');
+        const debugPanel = document.getElementById('debug-panel');
+        const debugInfoDiv = document.getElementById('debug-info');
+        
+        // 디버그 모드 - 개발 중에는 true로 설정
+        const DEBUG_MODE = true;
+        
+        if (DEBUG_MODE) {
+            debugPanel.classList.remove('hidden');
+        }
+
+        // 디버그 버튼 이벤트 설정
+        document.getElementById('spawn-enemy').addEventListener('click', () => {
+            if (isGameRunning) {
+                spawnTestEnemy();
+            }
+        });
+        
+        document.getElementById('spawn-item').addEventListener('click', () => {
+            if (isGameRunning) {
+                spawnTestItem();
+            }
+        });
+        
+        document.getElementById('debug-info-btn').addEventListener('click', () => {
+            if (isGameRunning) {
+                showDebugInfo();
+            }
+        });
 
         // --- 게임 상태 변수 ---
         let player, enemies, items, projectiles, score, gameOver, animationFrameId, gameStartTime, lastUpdateTime;
@@ -118,6 +166,13 @@
 
             player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, targetX));
             player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, targetY));
+            
+            if (DEBUG_MODE) {
+                // 자이로스코프 값 디버깅
+                if (Date.now() % 1000 < 50) { // 주기적으로만 출력
+                    console.log("Gyro values:", {beta, gamma, playerX: player.x, playerY: player.y});
+                }
+            }
         }
 
         // --- 센서 접근 권한 요청 및 리스너 등록 ---
@@ -204,6 +259,10 @@
                 enemyData.dx = Math.random() < 0.5 ? 2 : -2; // 초기 좌우 이동 방향
             }
             enemies.push(enemyData);
+            
+            if (DEBUG_MODE) {
+                console.log(`Enemy spawned: ${type} at (${x}, ${y}). Total: ${enemies.length}`);
+            }
 
             lastEnemySpawnTime = currentTime;
             enemySpawnRate = Math.max(200, 1000 - (Date.now() - gameStartTime) / 100); // 난이도 상승
@@ -234,6 +293,11 @@
                 itemData.color = 'green';
             }
             items.push(itemData);
+            
+            if (DEBUG_MODE) {
+                console.log(`Item spawned: ${itemData.type} at (${x}, ${y}). Total: ${items.length}`);
+            }
+            
             lastItemSpawnTime = currentTime;
             itemSpawnRate = Math.max(3000, 5000 - (Date.now() - gameStartTime) / 150); // 아이템 생성 간격도 약간 줄임
         }
@@ -314,6 +378,11 @@
             spawnEnemy(currentTime);
             // 아이템 생성
             spawnItem(currentTime);
+
+            // 디버그 모드에서는 주기적으로 객체 상태 출력
+            if (DEBUG_MODE && currentTime % 3000 < 20) {
+                showDebugInfo();
+            }
 
             // 적 이동 및 플레이어 충돌 처리
             for (let i = enemies.length - 1; i >= 0; i--) {
@@ -533,6 +602,15 @@
             lastEnemySpawnTime = Date.now(); // 적 생성 타이머 시작 시간
             lastItemSpawnTime = Date.now(); // 아이템 생성 타이머 시작 시간
             console.log("Game started.");
+            
+            // 디버그 모드에서는 시작 즉시 테스트 객체 생성
+            if (DEBUG_MODE) {
+                setTimeout(() => {
+                    spawnTestEnemy();
+                    spawnTestItem();
+                }, 1000);
+            }
+            
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
             animationFrameId = requestAnimationFrame(gameLoop);
         }
@@ -549,7 +627,7 @@
              console.log("Reset to initial screen.");
         }
 
-        // PC용 키보드 컨트롤 테스트 (기기 센서 없을 때 사용)
+        // PC용 키보드 컨트롤 (기기 센서 없을 때 사용)
         window.addEventListener('keydown', function(e) {
             // 게임이 실행 중일 때만 키보드 입력 처리
             if (isGameRunning) {
@@ -571,37 +649,63 @@
                 }
             }
         });
-
-        // 초기 상태 설정
-        resetToInitialScreen(); // 페이지 로드 시 초기 화면 표시
-
-        // 디버깅용 코드 - 적과 아이템을 수동으로 생성하여 테스트
-        function debugSpawnItems() {
-            // 적 생성 테스트
+        
+        // 테스트 객체 생성 함수
+        function spawnTestEnemy() {
             enemies.push({
-                x: canvas.width / 2,
-                y: 50,
+                x: Math.random() * (canvas.width - 20) + 10,
+                y: -20,
                 radius: enemyRadius,
                 speed: 2,
                 type: 'normal',
                 color: 'red'
             });
             
-            // 아이템 생성 테스트
-            items.push({
-                x: canvas.width / 3,
-                y: 100,
-                speed: 1.5,
-                type: 'score',
-                radius: itemRadius,
-                color: 'lime'
-            });
-            
-            console.log("Debug items spawned:", enemies.length, items.length);
+            console.log("Test enemy spawned. Total enemies:", enemies.length);
         }
-
-        // 시작 후 3초 뒤에 디버깅용 아이템 생성 (필요시 활성화)
-        // setTimeout(debugSpawnItems, 3000);
-    </script>
-</body>
-</html>
+        
+        function spawnTestItem() {
+            const types = ['score', 'bee', 'leaf'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            let item = {
+                x: Math.random() * (canvas.width - 20) + 10,
+                y: -20,
+                speed: 1.5,
+                type: type
+            };
+            
+            if (type === 'score' || type === 'leaf') {
+                item.radius = itemRadius;
+                item.color = type === 'score' ? 'lime' : 'green';
+            } else { // bee
+                item.width = itemRadius * 2.5;
+                item.height = itemRadius * 1.5;
+                item.color = 'yellow';
+            }
+            
+            items.push(item);
+            console.log("Test item spawned:", type, ". Total items:", items.length);
+        }
+        
+        // 디버그 정보 표시
+        function showDebugInfo() {
+            if (!debugInfoDiv) return;
+            
+            const info = `
+                <strong>Game Status:</strong> ${isGameRunning ? 'Running' : 'Stopped'}<br>
+                <strong>Player:</strong> (${Math.round(player.x)}, ${Math.round(player.y)})<br>
+                <strong>Shield:</strong> ${player.shieldActive ? 'Active' : 'Inactive'}<br>
+                <strong>Enemies:</strong> ${enemies.length}<br>
+                <strong>Items:</strong> ${items.length}<br>
+                <strong>Projectiles:</strong> ${projectiles.length}<br>
+                <strong>Score:</strong> ${score}
+            `;
+            
+            debugInfoDiv.innerHTML = info;
+            console.log("Game state:", {
+                running: isGameRunning,
+                enemies: enemies.length,
+                items: items.length,
+                projectiles: projectiles.length
+            });
+        }
