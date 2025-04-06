@@ -38,9 +38,24 @@
             font-size: 1.2em;
             margin-bottom: 15px;
             cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+        #start-button:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+        #start-button:active {
+            background-color: #3e8e41;
+            transform: scale(0.98);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .hidden {
-            display: none;
+            display: none !important;
         }
         #debug-panel {
             margin-top: 10px;
@@ -54,10 +69,23 @@
             font-size: 0.8em;
             color: #555;
         }
+        #manual-start {
+            position: relative;
+            z-index: 1001;
+        }
+        #manual-start-btn {
+            transition: all 0.3s;
+        }
+        #manual-start-btn:hover {
+            transform: scale(1.05);
+        }
+        #manual-start-btn:active {
+            transform: scale(0.98);
+        }
     </style>
 </head>
 <body>
-    <button id="start-button">게임 시작 및 센서 사용</button>
+    <button id="start-button" style="z-index: 1000; position: relative;">게임 시작 및 센서 사용</button>
 
     <canvas id="gameCanvas" width="400" height="600" class="hidden"></canvas>
     <div id="controls-info" class="hidden">기기를 기울여 무당벌레를 움직이세요!<br>떨어지는 아이템을 획득하세요! (센서 권한 허용 필요)</div>
@@ -70,22 +98,51 @@
         <button id="debug-info-btn">디버그 정보</button>
         <div id="debug-info"></div>
     </div>
+    
+    <!-- 수동 게임 시작 버튼 추가 -->
+    <div id="manual-start" style="margin-top: 20px; display: none;">
+        <button id="manual-start-btn" style="background-color: #ff5722; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">
+            시작 버튼 문제 해결 - 여기를 클릭하세요
+        </button>
+    </div>
 
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const shieldInfoDiv = document.getElementById('shield-info');
-        const controlsInfoDiv = document.getElementById('controls-info');
-        const startButton = document.getElementById('start-button');
-        const debugPanel = document.getElementById('debug-panel');
-        const debugInfoDiv = document.getElementById('debug-info');
+        // 페이지 완전 로드 후 실행
+        window.onload = function() {
+            console.log("Window loaded");
+            initGame();
+        };
         
-        // 디버그 모드 - 개발 중에는 true로 설정
-        const DEBUG_MODE = true;
-        
-        if (DEBUG_MODE) {
-            debugPanel.classList.remove('hidden');
-        }
+        function initGame() {
+            // DOM 요소 가져오기
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const shieldInfoDiv = document.getElementById('shield-info');
+            const controlsInfoDiv = document.getElementById('controls-info');
+            const startButton = document.getElementById('start-button');
+            const debugPanel = document.getElementById('debug-panel');
+            const debugInfoDiv = document.getElementById('debug-info');
+            
+            console.log("Game elements initialized:", {
+                canvas: !!canvas,
+                context: !!ctx,
+                startButton: !!startButton
+            });
+            
+            // 버튼 확인
+            if (!startButton) {
+                console.error("Start button not found!");
+                alert("시작 버튼을 찾을 수 없습니다. 페이지를 새로고침해주세요.");
+                return;
+            }
+            
+            // 디버그 모드 - 개발 중에는 true로 설정
+            const DEBUG_MODE = true;
+            
+            if (DEBUG_MODE) {
+                debugPanel.classList.remove('hidden');
+                console.log("Debug mode enabled");
+            }
 
         // 디버그 버튼 이벤트 설정
         document.getElementById('spawn-enemy').addEventListener('click', () => {
@@ -200,12 +257,35 @@
         }
 
         // --- 시작 버튼 클릭 이벤트 ---
-        startButton.addEventListener('click', () => {
+        function startButtonHandler() {
+            console.log("Start button clicked!");
             startButton.classList.add('hidden');
             canvas.classList.remove('hidden');
             controlsInfoDiv.classList.remove('hidden');
             requestDeviceOrientation();
+        }
+        
+        // 여러 방식으로 이벤트 리스너 등록
+        startButton.addEventListener('click', startButtonHandler);
+        startButton.addEventListener('touchstart', function(e) {
+            e.preventDefault(); // 터치 이벤트의 기본 동작 방지
+            startButtonHandler();
         });
+        
+        // 수동 시작 버튼 표시 및 이벤트 등록
+        setTimeout(function() {
+            const manualStartDiv = document.getElementById('manual-start');
+            const manualStartBtn = document.getElementById('manual-start-btn');
+            
+            if (manualStartDiv && manualStartBtn) {
+                manualStartDiv.style.display = 'block';
+                manualStartBtn.addEventListener('click', startButtonHandler);
+                manualStartBtn.addEventListener('touchstart', function(e) {
+                    e.preventDefault();
+                    startButtonHandler();
+                });
+            }
+        }, 2000); // 2초 후에 수동 시작 버튼 표시
 
         // --- 화면 터치/클릭 이벤트 (보호막 활성화, 재시작) ---
         function handleInteractionStart(e) {
