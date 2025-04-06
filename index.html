@@ -3,43 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>무당벌레 피하기 v3</title>
+    <title>무당벌레 피하기 v3.1</title> {/* 버전 업데이트 */}
     <style>
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-            font-family: sans-serif;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        canvas {
-            border: 1px solid black;
-            background-color: #e0ffe0; /* 연한 녹색 배경 */
-        }
-        #info-display {
-            margin-top: 10px;
-            font-size: 0.9em;
-            color: #333;
-            text-align: center;
-            min-height: 2.5em; /* 메시지 표시 공간 확보 */
-        }
-        #start-button {
-            padding: 12px 25px;
-            font-size: 1.3em;
-            margin-bottom: 20px;
-            cursor: pointer;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-        }
-        .hidden {
-            display: none;
-        }
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f0f0; font-family: sans-serif; flex-direction: column; overflow: hidden; }
+        canvas { border: 1px solid black; background-color: #e0ffe0; }
+        #info-display { margin-top: 10px; font-size: 0.9em; color: #333; text-align: center; min-height: 2.5em; }
+        #start-button { padding: 12px 25px; font-size: 1.3em; margin-bottom: 20px; cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 5px; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -61,62 +31,48 @@
         const ITEM_RADIUS = 9;
         const PLAYER_COLOR = 'gold';
         const SHIELD_COLOR = 'rgba(0, 150, 255, 0.5)';
-        const SHIELD_DURATION = 2000; // 보호막 지속 시간 (2초)
+        const SHIELD_DURATION = 2000;
         const GYRO_SENSITIVITY = 2.5;
+        // *** 적 관련 상수 추가 ***
+        const NORMAL_ENEMY_BASE_SPEED = 1.8; // 일반 적 초기 기본 속도 감소
+        const NORMAL_ENEMY_RAND_SPEED = 1.2; // 일반 적 초기 랜덤 속도 범위 감소
+        const NORMAL_ENEMY_HOMING_FACTOR = 0.3; // 일반 적 추적 강도 (낮을수록 약함)
+        const ZIGZAG_ENEMY_BASE_SPEED = 2.5;
+        const ZIGZAG_ENEMY_RAND_SPEED = 1.5;
+        const ZIGZAG_ENEMY_DX = 2.5;
+        const BASE_ENEMY_SPAWN_RATE = 1200; // 초기 적 생성 간격 증가
+        const MIN_ENEMY_SPAWN_RATE = 100;  // 최소 적 생성 간격
+        const SPAWN_RATE_SCORE_FACTOR = 0.08; // 점수에 따른 생성 간격 감소율
+        const SPEED_SCORE_FACTOR = 0.00005; // 점수에 따른 속도 증가율 (매우 작게 설정)
+
 
         // --- 게임 상태 변수 ---
         let player, enemies, items, projectiles, score;
         let isGameRunning, gameOver;
-        let beta, gamma; // 자이로스코프 값
+        let beta, gamma;
         let animationFrameId;
         let gameStartTime, lastUpdateTime;
         let enemySpawnRate, lastEnemySpawnTime, itemSpawnRate, lastItemSpawnTime;
-        let shieldTimer; // 현재 활성화된 보호막 남은 시간
+        let shieldTimer;
 
         // --- 게임 초기화 ---
         function initGame() {
-            // 플레이어 초기화
-            player = {
-                x: canvas.width / 2,
-                y: canvas.height - 50,
-                radius: PLAYER_RADIUS,
-                color: PLAYER_COLOR,
-                isShielded: false // 보호막 상태
-            };
-            // 배열 초기화
-            enemies = [];
-            items = [];
-            projectiles = [];
-            // 상태 변수 초기화
-            score = 0;
-            isGameRunning = false;
-            gameOver = false;
-            beta = 0;
-            gamma = 0;
-            shieldTimer = 0;
-            // 타이머 초기화
-            enemySpawnRate = 1000; // ms
+            player = { x: canvas.width / 2, y: canvas.height - 50, radius: PLAYER_RADIUS, color: PLAYER_COLOR, isShielded: false };
+            enemies = []; items = []; projectiles = [];
+            score = 0; isGameRunning = false; gameOver = false; beta = 0; gamma = 0; shieldTimer = 0;
+            enemySpawnRate = BASE_ENEMY_SPAWN_RATE; // 상수 사용
             lastEnemySpawnTime = 0;
-            itemSpawnRate = 3500; // ms (이전보다 약간 더 자주)
-            lastItemSpawnTime = 0;
-            // 애니메이션 프레임 초기화
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
-            // UI 초기화
+            itemSpawnRate = 3500; lastItemSpawnTime = 0;
+            if (animationFrameId) cancelAnimationFrame(animationFrameId); animationFrameId = null;
             infoDisplay.textContent = '기기를 기울여 조작하세요! 아이템을 획득하세요!';
             console.log("Game Initialized");
         }
 
         // --- 자이로스코프 핸들러 ---
         function handleOrientation(event) {
-            // null 체크 및 값 업데이트
-            beta = event.beta ?? beta;
-            gamma = event.gamma ?? gamma;
-
-            // 플레이어 위치 업데이트 (캔버스 경계 체크 포함)
+            beta = event.beta ?? beta; gamma = event.gamma ?? gamma;
             let targetX = player.x + (gamma * GYRO_SENSITIVITY * 0.1);
-            let targetY = player.y + ((beta - 30) * GYRO_SENSITIVITY * 0.05); // Y축은 약간만
-
+            let targetY = player.y + ((beta - 30) * GYRO_SENSITIVITY * 0.05);
             player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, targetX));
             player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, targetY));
         }
@@ -124,7 +80,6 @@
         // --- 센서 권한 요청 및 게임 시작 로직 ---
         function requestSensorAndStart() {
             console.log("Requesting sensor permission...");
-            // iOS 13+ 권한 요청
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 DeviceOrientationEvent.requestPermission()
                     .then(permissionState => {
@@ -135,7 +90,7 @@
                         } else {
                             console.log("Sensor permission denied.");
                             alert('자이로스코프 센서 사용 권한이 거부되었습니다.');
-                            resetToTitleScreen(); // 권한 거부 시 초기 화면으로
+                            resetToTitleScreen();
                         }
                     })
                     .catch(error => {
@@ -144,9 +99,7 @@
                          resetToTitleScreen();
                     });
             } else {
-                // 권한 요청이 필요 없는 환경 (구형 브라우저, 안드로이드 등)
-                console.log("Sensor permission not required or API unavailable. Adding listener directly.");
-                // 센서 지원 여부 확인 (선택적이지만 추가)
+                console.log("Sensor permission not required or API unavailable.");
                 if (typeof DeviceOrientationEvent !== 'undefined') {
                     window.addEventListener('deviceorientation', handleOrientation);
                     startGame();
@@ -159,52 +112,35 @@
 
         // --- 게임 시작 ---
         function startGame() {
-            if (isGameRunning) return; // 이미 실행 중이면 무시
-
+            if (isGameRunning) return;
             console.log("Starting game...");
-            initGame(); // 게임 상태 초기화
-            isGameRunning = true;
-            gameOver = false;
-            gameStartTime = Date.now();
-            lastUpdateTime = gameStartTime;
-            lastEnemySpawnTime = gameStartTime;
-            lastItemSpawnTime = gameStartTime;
-
-            // UI 변경
-            startButton.classList.add('hidden');
-            canvas.classList.remove('hidden');
-            infoDisplay.classList.remove('hidden');
-
-            // 게임 루프 시작
+            initGame();
+            isGameRunning = true; gameOver = false;
+            gameStartTime = Date.now(); lastUpdateTime = gameStartTime;
+            lastEnemySpawnTime = gameStartTime; lastItemSpawnTime = gameStartTime;
+            startButton.classList.add('hidden'); canvas.classList.remove('hidden'); infoDisplay.classList.remove('hidden');
             gameLoop();
             console.log("Game loop started.");
         }
 
         // --- 초기 화면(타이틀)으로 복귀 ---
         function resetToTitleScreen() {
-            isGameRunning = false;
-            gameOver = false; // 게임 오버 상태도 해제
-            // UI 초기화
-            startButton.classList.remove('hidden');
-            canvas.classList.add('hidden');
-            infoDisplay.classList.add('hidden');
-            // 이벤트 리스너 제거
+            isGameRunning = false; gameOver = false;
+            startButton.classList.remove('hidden'); canvas.classList.add('hidden'); infoDisplay.classList.add('hidden');
             window.removeEventListener('deviceorientation', handleOrientation);
-            // 애니메이션 중지
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
-            console.log("Reset to title screen. Sensor listener removed.");
+            if (animationFrameId) cancelAnimationFrame(animationFrameId); animationFrameId = null;
+            console.log("Reset to title screen.");
         }
 
         // --- 시작 버튼 이벤트 리스너 ---
         startButton.addEventListener('click', requestSensorAndStart);
 
-        // --- 재시작 이벤트 리스너 (게임 오버 시 캔버스 터치/클릭) ---
+        // --- 재시작 이벤트 리스너 ---
         function handleRestartInteraction(e) {
              if (e) e.preventDefault();
              if (gameOver) {
-                 console.log("Restarting game from game over screen...");
-                 resetToTitleScreen(); // 초기 화면으로 돌아가서 다시 시작 버튼 누르도록 유도
+                 console.log("Restarting game...");
+                 resetToTitleScreen();
              }
         }
         canvas.addEventListener('touchstart', handleRestartInteraction);
@@ -213,30 +149,39 @@
 
         // --- 적 생성 ---
         function spawnEnemy(currentTime) {
+            // *** 점수 기반 생성 간격 계산 ***
+            enemySpawnRate = Math.max(MIN_ENEMY_SPAWN_RATE, BASE_ENEMY_SPAWN_RATE - score * SPAWN_RATE_SCORE_FACTOR);
+
             if (currentTime - lastEnemySpawnTime < enemySpawnRate) return;
 
             const x = Math.random() * (canvas.width - ENEMY_RADIUS * 2) + ENEMY_RADIUS;
             const y = -ENEMY_RADIUS;
-            const speed = 2.5 + Math.random() * 2 + (Date.now() - gameStartTime) / 25000; // 속도 증가폭 약간 줄임
-            const type = Math.random() < 0.35 ? 'zigzag' : 'normal'; // 지그재그 확률 35%
-            let enemy = { x, y, radius: ENEMY_RADIUS, speed, type };
+            const type = Math.random() < 0.35 ? 'zigzag' : 'normal';
+            let enemy = { x, y, type };
 
+            // *** 타입별 속성 설정 (초기 속도, 점수 기반 속도 증가) ***
             if (type === 'normal') {
+                enemy.radius = ENEMY_RADIUS;
                 enemy.color = 'red';
+                enemy.speed = NORMAL_ENEMY_BASE_SPEED + Math.random() * NORMAL_ENEMY_RAND_SPEED + score * SPEED_SCORE_FACTOR;
             } else { // zigzag
-                enemy.color = 'purple';
+                enemy.radius = ENEMY_RADIUS; // 충돌 감지 편의상 radius 유지
                 enemy.width = ENEMY_RADIUS * 1.5;
                 enemy.height = ENEMY_RADIUS * 1.5;
-                enemy.dx = Math.random() < 0.5 ? 2.5 : -2.5; // 지그재그 속도 약간 증가
+                enemy.color = 'purple';
+                enemy.speed = ZIGZAG_ENEMY_BASE_SPEED + Math.random() * ZIGZAG_ENEMY_RAND_SPEED + score * SPEED_SCORE_FACTOR;
+                enemy.dx = Math.random() < 0.5 ? ZIGZAG_ENEMY_DX : -ZIGZAG_ENEMY_DX;
             }
             enemies.push(enemy);
 
             lastEnemySpawnTime = currentTime;
-            enemySpawnRate = Math.max(150, 1000 - (Date.now() - gameStartTime) / 120); // 생성 간격 감소폭 약간 늘림
         }
 
         // --- 아이템 생성 ---
         function spawnItem(currentTime) {
+            // 점수 기반 아이템 생성 간격 (선택적 - 일단 시간 기반 유지)
+            // itemSpawnRate = Math.max(2000, 3500 - score * 0.05);
+
             if (currentTime - lastItemSpawnTime < itemSpawnRate) return;
 
             const x = Math.random() * (canvas.width - ITEM_RADIUS * 2) + ITEM_RADIUS;
@@ -245,53 +190,30 @@
             const rand = Math.random();
             let item = { x, y, speed };
 
-            if (rand < 0.35) { // 35% 점수
-                item.type = 'score'; item.radius = ITEM_RADIUS; item.color = 'lime';
-            } else if (rand < 0.65) { // 30% 보호막
-                item.type = 'shield'; item.radius = ITEM_RADIUS; item.color = 'deepskyblue'; // 파란색 원
-            } else { // 35% 벌 미사일
-                item.type = 'bee'; item.width = ITEM_RADIUS * 2.5; item.height = ITEM_RADIUS * 1.5; item.color = 'yellow';
-            }
+            if (rand < 0.35) { item.type = 'score'; item.radius = ITEM_RADIUS; item.color = 'lime'; }
+            else if (rand < 0.65) { item.type = 'shield'; item.radius = ITEM_RADIUS; item.color = 'deepskyblue'; }
+            else { item.type = 'bee'; item.width = ITEM_RADIUS * 2.5; item.height = ITEM_RADIUS * 1.5; item.color = 'yellow'; }
+
             items.push(item);
             console.log('Spawning item:', item.type);
-
             lastItemSpawnTime = currentTime;
-            itemSpawnRate = Math.max(2000, 3500 - (Date.now() - gameStartTime) / 90); // 아이템 생성 간격도 줄어듦
+            itemSpawnRate = Math.max(2000, 3500 - (Date.now() - gameStartTime) / 90); // 시간 기반 유지
         }
 
         // --- 아이템 효과 발동 ---
         function activateItemEffect(item) {
             console.log("Item collected:", item.type);
-            if (item.type === 'score') {
-                score += 250; // 점수 보너스 증가
-            } else if (item.type === 'shield') {
-                player.isShielded = true;
-                shieldTimer = SHIELD_DURATION; // 보호막 타이머 시작
-                console.log("Shield item activated!");
-            } else if (item.type === 'bee') {
-                // 벌 미사일 발사
-                projectiles.push({
-                    x: player.x, y: player.y - player.radius, width: 20, height: 30,
-                    color: 'orange', speed: -3.5, type: 'bee' // 속도 약간 증가
-                });
+            if (item.type === 'score') { score += 250; }
+            else if (item.type === 'shield') { player.isShielded = true; shieldTimer = SHIELD_DURATION; console.log("Shield item activated!"); }
+            else if (item.type === 'bee') {
+                projectiles.push({ x: player.x, y: player.y - player.radius, width: 20, height: 30, color: 'orange', speed: -3.5, type: 'bee' });
             }
         }
 
-        // --- 충돌 감지 로직 (이전과 유사) ---
-        function detectCircleCollision(circle1, circle2) {
-            const dx = circle1.x - circle2.x; const dy = circle1.y - circle2.y;
-            return (dx * dx + dy * dy) < (circle1.radius + circle2.radius) ** 2;
-        }
-        function detectRectCollision(circle, rect) {
-            const closestX = Math.max(rect.x - rect.width / 2, Math.min(circle.x, rect.x + rect.width / 2));
-            const closestY = Math.max(rect.y - rect.height / 2, Math.min(circle.y, rect.y + rect.height / 2));
-            const dx = circle.x - closestX; const dy = circle.y - closestY;
-            return (dx * dx + dy * dy) < (circle.radius * circle.radius);
-        }
-        function detectRectRectCollision(rect1, rect2) { // 사각형 간 충돌 (간단 버전)
-             return Math.abs(rect1.x - rect2.x) * 2 < (rect1.width + rect2.width) &&
-                    Math.abs(rect1.y - rect2.y) * 2 < (rect1.height + rect2.height);
-        }
+        // --- 충돌 감지 로직 ---
+        function detectCircleCollision(circle1, circle2) { /* 이전과 동일 */ const dx = circle1.x - circle2.x; const dy = circle1.y - circle2.y; return (dx * dx + dy * dy) < (circle1.radius + circle2.radius) ** 2; }
+        function detectRectCollision(circle, rect) { /* 이전과 동일 */ const closestX = Math.max(rect.x - rect.width / 2, Math.min(circle.x, rect.x + rect.width / 2)); const closestY = Math.max(rect.y - rect.height / 2, Math.min(circle.y, rect.y + rect.height / 2)); const dx = circle.x - closestX; const dy = circle.y - closestY; return (dx * dx + dy * dy) < (circle.radius * circle.radius); }
+        function detectRectRectCollision(rect1, rect2) { /* 이전과 동일 */ return Math.abs(rect1.x - rect2.x) * 2 < (rect1.width + rect2.width) && Math.abs(rect1.y - rect2.y) * 2 < (rect1.height + rect2.height); }
 
 
         // --- 게임 업데이트 ---
@@ -301,26 +223,28 @@
             const deltaTime = currentTime - lastUpdateTime;
             lastUpdateTime = currentTime;
 
-            // 보호막 타이머 업데이트
+            // 보호막 타이머
             if (shieldTimer > 0) {
                 shieldTimer -= deltaTime;
-                if (shieldTimer <= 0) {
-                    player.isShielded = false;
-                    console.log("Shield deactivated.");
-                }
+                if (shieldTimer <= 0) player.isShielded = false;
             }
 
-            // 생성 로직
+            // 생성
             spawnEnemy(currentTime);
             spawnItem(currentTime);
 
-            // 이동 로직 (적, 아이템, 발사체)
+            // 이동 (적, 아이템, 발사체)
             enemies.forEach((enemy, i) => {
-                enemy.y += enemy.speed;
-                if (enemy.type === 'zigzag') {
+                // *** 일반 적 추적 로직 추가 ***
+                if (enemy.type === 'normal' && !player.isShielded) { // 보호막 없을 때만 추적
+                    const directionX = Math.sign(player.x - enemy.x);
+                    enemy.x += directionX * NORMAL_ENEMY_HOMING_FACTOR;
+                } else if (enemy.type === 'zigzag') {
                     enemy.x += enemy.dx;
                     if (enemy.x - enemy.width/2 < 0 || enemy.x + enemy.width/2 > canvas.width) enemy.dx *= -1;
                 }
+                enemy.y += enemy.speed; // 공통 하강
+
                 // 화면 밖 제거
                 if (enemy.y > canvas.height + (enemy.radius || enemy.height)) enemies.splice(i, 1);
             });
@@ -330,25 +254,22 @@
             });
             projectiles.forEach((proj, i) => {
                 if (proj.type === 'bee') proj.y += proj.speed;
-                // 화면 밖 제거
                  if (proj.y < -proj.height) projectiles.splice(i, 1);
             });
 
 
-            // 충돌 처리 로직
+            // 충돌 처리
             // 1. 플레이어 vs 적
-            if (!player.isShielded) { // 보호막 없을 때만 충돌 체크
+            if (!player.isShielded) {
                 for (let i = enemies.length - 1; i >= 0; i--) {
                     const enemy = enemies[i];
                     let collided = (enemy.type === 'normal')
                         ? detectCircleCollision(player, enemy)
                         : detectRectCollision(player, {x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height});
                     if (collided) {
-                        gameOver = true;
-                        isGameRunning = false;
+                        gameOver = true; isGameRunning = false;
                         window.removeEventListener('deviceorientation', handleOrientation);
-                        console.log("Game Over! Player hit enemy.");
-                        return; // 업데이트 중단
+                        console.log("Game Over!"); return;
                     }
                 }
             }
@@ -359,10 +280,7 @@
                 let collected = (item.type === 'score' || item.type === 'shield')
                     ? detectCircleCollision(player, item)
                     : detectRectCollision(player, {x: item.x, y: item.y, width: item.width, height: item.height});
-                if (collected) {
-                    activateItemEffect(item);
-                    items.splice(i, 1);
-                }
+                if (collected) { activateItemEffect(item); items.splice(i, 1); }
             }
 
             // 3. 발사체 vs 적
@@ -371,112 +289,70 @@
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     const enemy = enemies[j];
                     let hit = false;
-                    let projShape = { x: proj.x, y: proj.y, width: proj.width, height: proj.height }; // 벌은 사각형
-                    let enemyShape = (enemy.type === 'normal')
-                        ? { x: enemy.x, y: enemy.y, radius: enemy.radius }
-                        : { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+                    let projShape = { x: proj.x, y: proj.y, width: proj.width, height: proj.height };
+                    let enemyShape = (enemy.type === 'normal') ? { x: enemy.x, y: enemy.y, radius: enemy.radius } : { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
 
-                    if (enemy.type === 'normal') { // 발사체(사각형) vs 일반적(원)
-                        hit = detectRectCollision(enemyShape, projShape);
-                    } else { // 발사체(사각형) vs 지그재그적(사각형)
-                        hit = detectRectRectCollision(projShape, enemyShape);
-                    }
+                    if (enemy.type === 'normal') { hit = detectRectCollision(enemyShape, projShape); }
+                    else { hit = detectRectRectCollision(projShape, enemyShape); }
 
                     if (hit) {
-                        enemies.splice(j, 1);
-                        projectiles.splice(i, 1); // 발사체도 제거
-                        score += 40; // 적 제거 점수
-                        console.log("Projectile hit enemy!");
-                        break; // 다음 발사체로 이동
+                        enemies.splice(j, 1); projectiles.splice(i, 1); score += 40;
+                        console.log("Projectile hit enemy!"); break;
                     }
                 }
             }
 
-            // 점수 업데이트 (생존 시간 기반)
-            score += deltaTime * 0.01; // 시간에 따라 점수 약간씩 증가
+            // 점수 업데이트
+            score += deltaTime * 0.01;
 
         } // 업데이트 함수 끝
 
         // --- 그리기 함수 ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (!isGameRunning && !gameOver) return; // 게임 시작 전/종료 후 그리지 않음
+            if (!isGameRunning && !gameOver) return;
 
             // 적 그리기
             enemies.forEach(enemy => {
                 ctx.fillStyle = enemy.color;
-                if (enemy.type === 'normal') {
-                    ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2); ctx.fill(); ctx.closePath();
-                } else {
-                    ctx.fillRect(enemy.x - enemy.width / 2, enemy.y - enemy.height / 2, enemy.width, enemy.height);
-                }
+                if (enemy.type === 'normal') { ctx.beginPath(); ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2); ctx.fill(); ctx.closePath(); }
+                else { ctx.fillRect(enemy.x - enemy.width / 2, enemy.y - enemy.height / 2, enemy.width, enemy.height); }
             });
-
-            // 아이템 그리기 (외곽선 포함)
+            // 아이템 그리기
             items.forEach(item => {
-                ctx.fillStyle = item.color;
-                ctx.strokeStyle = 'black'; ctx.lineWidth = 1;
-                if (item.type === 'score' || item.type === 'shield') { // 원형
-                    ctx.beginPath(); ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.closePath();
-                } else { // bee (사각형)
-                     ctx.fillRect(item.x - item.width / 2, item.y - item.height / 2, item.width, item.height);
-                     ctx.strokeRect(item.x - item.width / 2, item.y - item.height / 2, item.width, item.height);
-                }
+                ctx.fillStyle = item.color; ctx.strokeStyle = 'black'; ctx.lineWidth = 1;
+                if (item.type === 'score' || item.type === 'shield') { ctx.beginPath(); ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.closePath(); }
+                else { ctx.fillRect(item.x - item.width / 2, item.y - item.height / 2, item.width, item.height); ctx.strokeRect(item.x - item.width / 2, item.y - item.height / 2, item.width, item.height); }
             });
-
-             // 발사체 그리기
+            // 발사체 그리기
             projectiles.forEach(proj => {
                 ctx.fillStyle = proj.color;
-                if (proj.type === 'bee') {
-                    ctx.fillRect(proj.x - proj.width / 2, proj.y - proj.height / 2, proj.width, proj.height);
-                }
+                if (proj.type === 'bee') { ctx.fillRect(proj.x - proj.width / 2, proj.y - proj.height / 2, proj.width, proj.height); }
             });
-
             // 플레이어 그리기
-            ctx.fillStyle = player.color;
-            ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2); ctx.fill(); ctx.closePath();
-            // 보호막 효과 그리기
-            if (player.isShielded) {
-                ctx.strokeStyle = SHIELD_COLOR; ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.arc(player.x, player.y, player.radius + 5, 0, Math.PI * 2); ctx.stroke(); ctx.closePath();
-            }
-
-            // UI (점수, 게임 오버) 그리기
-            ctx.fillStyle = 'black'; ctx.font = '20px Arial'; ctx.textAlign = 'left';
-            ctx.fillText('Score: ' + Math.floor(score), 10, 30);
-
+            ctx.fillStyle = player.color; ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2); ctx.fill(); ctx.closePath();
+            if (player.isShielded) { ctx.strokeStyle = SHIELD_COLOR; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(player.x, player.y, player.radius + 5, 0, Math.PI * 2); ctx.stroke(); ctx.closePath(); }
+            // UI 그리기
+            ctx.fillStyle = 'black'; ctx.font = '20px Arial'; ctx.textAlign = 'left'; ctx.fillText('Score: ' + Math.floor(score), 10, 30);
             if (gameOver) {
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-                ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'; ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
                 ctx.fillStyle = 'white'; ctx.font = 'bold 48px Arial'; ctx.textAlign = 'center';
                 ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2);
-                ctx.font = '20px Arial';
-                ctx.fillText('Score: ' + Math.floor(score), canvas.width / 2, canvas.height / 2 + 35);
-                ctx.font = '16px Arial';
-                ctx.fillText('Tap to return to title', canvas.width / 2, canvas.height / 2 + 55);
+                ctx.font = '20px Arial'; ctx.fillText('Score: ' + Math.floor(score), canvas.width / 2, canvas.height / 2 + 35);
+                ctx.font = '16px Arial'; ctx.fillText('Tap to return to title', canvas.width / 2, canvas.height / 2 + 55);
             }
         }
 
         // --- 게임 루프 ---
         function gameLoop(currentTime) {
-            if (!isGameRunning && !gameOver) { // 타이틀 화면 상태
-                 animationFrameId = requestAnimationFrame(gameLoop); // 루프는 계속 돌며 상태 체크
-                 return;
-            }
-            if (gameOver) { // 게임 오버 상태
-                 draw(); // 게임 오버 화면 그리기
-                 // 루프 중지 (재시작 시 다시 시작됨)
-                 return;
-            }
-
-            // 게임 실행 중
-            update(currentTime);
-            draw();
-            animationFrameId = requestAnimationFrame(gameLoop); // 다음 프레임 요청
+            if (!isGameRunning && !gameOver) { animationFrameId = requestAnimationFrame(gameLoop); return; }
+            if (gameOver) { draw(); return; }
+            update(currentTime); draw();
+            animationFrameId = requestAnimationFrame(gameLoop);
         }
 
         // --- 초기 상태 설정 ---
-        resetToTitleScreen(); // 페이지 로드 시 초기(타이틀) 화면 표시
+        resetToTitleScreen();
 
     </script>
 </body>
