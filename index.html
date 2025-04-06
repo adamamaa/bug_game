@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"> {/* user-scalable=no 추가 */}
+    <title>무당벌레 피하기 (자이로스코프)</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: sans-serif;
+            flex-direction: column;
+            overflow: hidden; /* 스크롤 방지 */
+        }
+        canvas {
+            border: 1px solid black;
+            background-color: #e0ffe0;
+            /* cursor: none; 마우스 사용 안 함 */
+        }
+        #controls-info {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #555;
+            text-align: center; /* 중앙 정렬 */
+        }
+        #shield-info {
+            margin-top: 5px;
+            font-size: 0.9em;
+            color: #33a;
+            font-weight: bold;
+            visibility: hidden;
+        }
+        #start-button {
+            padding: 10px 20px;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            cursor: pointer;
+        }
+        .hidden {
+            display: none; /* 시작 버튼 숨기기용 */
+        }
+    </style>
+</head>
+<body>
+    {/* 게임 시작 및 권한 요청 버튼 */}
+    <button id="start-button">게임 시작 및 센서 사용</button>
+
+    {/* 캔버스 및 정보 표시 영역 (초기에는 숨김) */}
+    <canvas id="gameCanvas" width="400" height="600" class="hidden"></canvas>
+    <div id="controls-info" class="hidden">기기를 기울여 무당벌레를 움직이세요!<br>(센서 권한을 허용해주세요)</div>
+    <div id="shield-info" class="hidden">보호막 활성화! (화면 터치)</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const shieldInfoDiv = document.getElementById('shield-info');
+        const controlsInfoDiv = document.getElementById('controls-info');
+        const startButton = document.getElementById('start-button');
+
+        // --- 초기 게임 상태 변수 ---
+        let player, enemies, enemyRadius, enemyColor, enemySpawnRate, lastSpawnTime, score, gameOver, animationFrameId, gameStartTime, lastUpdateTime;
+        let isGameRunning = false; // 게임 실행 상태 플래그
+
+        // --- 플레이어 기본 설정 ---
+        const playerBase = {
+            radius: 15,
+            color: 'gold',
+            shieldActive: false,
+            shieldDuration: 1500,
+            shieldCooldown: 5000,
+            shieldTimer: 0,
+            shieldCooldownTimer: 0
+        };
+
+        // --- 자이로스코프 관련 변수 ---
+        let beta = 0;  // 앞뒤 기울기 (-180 ~ 180 또는 -90 ~ 90)
+        let gamma = 0; // 좌우 기울기 (-90 ~ 90)
+        const SENSITIVITY = 2.5; // 기울기 민감도 조절 값
+
+        // --- 게임 초기화 함수 ---
+        function initializeGameVariables() {
+            player = {
+                ...playerBase, // 기본 설정 복사
+                x: canvas.width / 2,
+                y: canvas.height - 50,
+            };
+            enemies = [];
+            enemyRadius = 10;
+            enemyColor = 'red';
+            enemySpawnRate = 1000;
+            lastSpawnTime = 0;
+            score = 0;
+            gameOver = false;
+            animationFrameId = null;
+            gameStartTime = Date.now();
+            lastUpdateTime = 0;
+            beta = 0;
+            gamma = 0;
+
+            // UI 초기화
+            shieldInfoDiv.style.visibility = 'hidden';
+            shieldInfoDiv.textContent = '보호막 활성화! (화면 터치)'; // 텍스트 초기화
+        }
+
+        // --- 자이로스코프 이벤트 핸들러 ---
+        function handleOrientation(event) {
+            // event.beta, event.gamma 값이 null이 아닐 경우에만 업데이트
+            if (event.beta !== null) beta = event.beta;
+            if (event.gamma !== null) gamma = event.gamma;
+
+            // 플레이어 위치 업데이트 (자이로 값 사용)
+            // gamma (좌우 기울기) -> x축 이동
+            // beta (앞뒤 기울기) -> y축 이동 (여기서는 y축 이동 제한 또는 다르게 매핑 가능)
+
+            // 좌우 이동 (gamma: -90 ~ 90)
+            // 기기를 오른쪽으로 기울이면 gamma 증가 -> x 증가
+            // 기기를 왼쪽으로 기울이면 gamma 감소 -> x 감소
+            let targetX = player.x + (gamma * SENSITIVITY * 0.1); // 민감도 조절
+
+            // 앞뒤 이동 (beta: -90 ~ 90 가정, 기기마다 다를 수 있음)
+            // 앞으로 기울이면 beta 증가 -> y 감소 (위로 이동)
+            // 뒤로 기울이면 beta 감소 -> y 증가 (아래로 이동)
+            // 여기서는 Y축 이동 범위를 제한하거나 다른 방식으로 활용 가능
+            // 예: 약간의 Y축 이동만 허용
+            let targetY = player.y + ((beta - 30) * SENSITIVITY * 0.05); // 30 정도를 평형으로 가정, 민감도 낮춤
+
+            // 플레이어가 캔버스 경계를 벗어나지 않도록 제한
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, targetX));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, targetY));
+        }
+
+        // --- 센서 접근 권한 요청 및 이벤트 리스너 등록 함수 ---
+        function requestDeviceOrientation() {
+            // iOS 13+ 대응: DeviceOrientationEvent.requestPermission() 체크
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                            startGame(); // 권한 허용 시 게임 시작
+                        } else {
+                            alert('자이로스코프 센서 사용 권한이 거부되었습니다.');
+                            // 게임 시작 버튼 다시 보이게 처리 등
+                             startButton.classList.remove('hidden');
+                             canvas.classList.add('hidden');
+                             controlsInfoDiv.classList.add('hidden');
+                             shieldInfoDiv.classList.add('hidden');
+                        }
+                    })
+                    .catch(error => {
+                         console.error("DeviceOrientationEvent 권한 요청 에러:", error);
+                         alert('센서 권한 요청 중 오류가 발생했습니다.');
+                         startButton.classList.remove('hidden');
+                    });
+            } else {
+                // 구형 브라우저 또는 안드로이드 등 requestPermission 불필요한 경우
+                window.addEventListener('deviceorientation', handleOrientation);
+                console.log("DeviceOrientation listener added directly.");
+                startGame(); // 바로 게임 시작
+            }
+        }
+
+        // --- 시작 버튼 클릭 이벤트 ---
+        startButton.addEventListener('click', () => {
+            console.log("Start button clicked");
+            // 시작 버튼 숨기고 게임 요소 보이기
+            startButton.classList.add('hidden');
+            canvas.classList.remove('hidden');
+            controlsInfoDiv.classList.remove('hidden');
+            // shieldInfoDiv는 보호막 활성화 시 보이도록 함
+
+            requestDeviceOrientation(); // 센서 권한 요청 및 게임 시작 시도
+        });
+
+
+        // --- 화면 터치로 보호막 활성화 ---
+        canvas.addEventListener('touchstart', (e) => {
+             e.preventDefault(); // 기본 터치 이벤트(스크롤 등) 방지
+            if (!player.shieldActive && player.shieldCooldownTimer <= 0 && !gameOver && isGameRunning) {
+                activateShield();
+            }
+        });
+         // 마우스 클릭 이벤트도 추가 (PC 테스트용)
+        canvas.addEventListener('mousedown', () => {
+            if (!player.shieldActive && player.shieldCooldownTimer <= 0 && !gameOver && isGameRunning) {
+                activateShield();
+            }
+        });
+
+
+        function activateShield() {
+            player.shieldActive = true;
+            player.shieldTimer = player.shieldDuration;
+            player.shieldCooldownTimer = player.shieldCooldown;
+            shieldInfoDiv.style.visibility = 'visible';
+            shieldInfoDiv.textContent = '보호막 활성화!'; // 텍스트 업데이트
+            console.log("Shield Activated!");
+
+            setTimeout(() => {
+                player.shieldActive = false;
+                shieldInfoDiv.style.visibility = 'hidden';
+                console.log("Shield Deactivated!");
+            }, player.shieldDuration);
+        }
+
+        // --- 적 생성 함수 ---
+        function spawnEnemy() {
+            const x = Math.random() * (canvas.width - enemyRadius * 2) + enemyRadius;
+            const y = -enemyRadius;
+            const speed = 2 + Math.random() * 2 + (Date.now() - gameStartTime) / 20000;
+            enemies.push({ x, y, radius: enemyRadius, color: enemyColor, speed });
+        }
+
+        // --- 충돌 감지 함수 ---
+        function detectCollision(player, enemy) {
+            const dx = player.x - enemy.x;
+            const dy = player.y - enemy.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < player.radius + enemy.radius;
+        }
+
+        // --- 게임 업데이트 함수 ---
+        function update(currentTime) {
+            if (gameOver || !isGameRunning) return;
+
+            const deltaTime = currentTime - (lastUpdateTime || currentTime);
+            lastUpdateTime = currentTime;
+
+            // 보호막 타이머 업데이트
+            if (player.shieldTimer > 0) player.shieldTimer -= deltaTime;
+            if (player.shieldCooldownTimer > 0) {
+                player.shieldCooldownTimer -= deltaTime;
+                 // 재사용 대기시간 표시 업데이트 (선택적)
+                 if (!player.shieldActive) { // 보호막 비활성 상태에서만 대기시간 표시
+                    shieldInfoDiv.textContent = `보호막 대기: ${Math.ceil(player.shieldCooldownTimer / 1000)}초`;
+                    shieldInfoDiv.style.visibility = 'visible';
+                 }
+            } else if (!player.shieldActive) {
+                 shieldInfoDiv.style.visibility = 'hidden'; // 대기 시간 끝나면 숨김
+                 shieldInfoDiv.textContent = '보호막 활성화! (화면 터치)'; // 텍스트 복원
+            }
+
+
+            // 적 생성
+            if (currentTime - lastSpawnTime > enemySpawnRate) {
+                spawnEnemy();
+                lastSpawnTime = currentTime;
+                enemySpawnRate = Math.max(200, 1000 - (Date.now() - gameStartTime) / 100);
+            }
+
+            // 적 이동 및 충돌 처리
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                enemy.y += enemy.speed;
+
+                if (enemy.y > canvas.height + enemy.radius) {
+                    enemies.splice(i, 1);
+                    score += 10;
+                }
+
+                if (detectCollision(player, enemy)) {
+                    if (player.shieldActive) {
+                        enemies.splice(i, 1);
+                        score += 50;
+                    } else {
+                        gameOver = true;
+                        isGameRunning = false; // 게임 오버 시 실행 중지
+                        // 센서 리스너 제거 (선택적이지만 권장)
+                        window.removeEventListener('deviceorientation', handleOrientation);
+                        console.log("Game Over. DeviceOrientation listener removed.");
+                        break;
+                    }
+                }
+            }
+        }
+
+         // --- 그리기 함수 ---
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (!isGameRunning && !gameOver) return; // 게임 시작 전에는 그리지 않음
+
+            // 플레이어 그리기
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = player.color;
+            ctx.fill();
+            ctx.closePath();
+
+            // 보호막 그리기
+            if (player.shieldActive) {
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.radius + 5, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(0, 150, 255, 0.7)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.closePath();
+            }
+
+            // 적 그리기
+            enemies.forEach(enemy => {
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                ctx.fillStyle = enemy.color;
+                ctx.fill();
+                ctx.closePath();
+            });
+
+            // 점수 표시
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'left'; // 점수는 왼쪽 정렬
+            ctx.fillText('Score: ' + score, 10, 30);
+
+            // 게임 오버 표시
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, canvas.height / 2 - 50, canvas.width, 100);
+                ctx.fillStyle = 'white';
+                ctx.font = '40px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2);
+                ctx.font = '20px Arial';
+                ctx.fillText('Tap to Restart', canvas.width / 2, canvas.height / 2 + 30);
+            }
+        }
+
+        // --- 게임 루프 ---
+        function gameLoop(currentTime) {
+            if (!isGameRunning && !gameOver) { // 게임이 실행 중이지 않고, 게임오버도 아니면 루프 중단 (시작 전 상태)
+                 animationFrameId = requestAnimationFrame(gameLoop); // 계속 루프는 돌면서 상태 체크
+                 return;
+            }
+            if (gameOver) { // 게임 오버 상태면 루프 중단
+                 draw(); // 마지막 게임 오버 화면 그림
+                 return;
+            }
+
+            update(currentTime);
+            draw();
+            animationFrameId = requestAnimationFrame(gameLoop); // 다음 프레임 요청
+        }
+
+        // --- 게임 시작 함수 ---
+        function startGame() {
+            console.log("Attempting to start game...");
+            if (isGameRunning) return; // 이미 실행 중이면 반환
+
+            initializeGameVariables(); // 게임 변수 초기화
+            isGameRunning = true; // 게임 실행 상태로 변경
+            lastSpawnTime = Date.now(); // 생성 시간 초기화
+            console.log("Game variables initialized. Starting game loop.");
+
+            // 기존 루프 ID가 있으면 취소
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            // 새 게임 루프 시작
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+
+        // --- 게임 재시작 (화면 터치) ---
+        canvas.addEventListener('touchstart', (e) => {
+             e.preventDefault();
+            if (gameOver) {
+                // 게임 오버 상태에서 터치 시, 시작 버튼을 다시 보이게 하고 초기 상태로 돌아감
+                gameOver = false; // 게임 오버 상태 해제
+                isGameRunning = false; // 게임 실행 중지 상태로
+                startButton.classList.remove('hidden'); // 시작 버튼 다시 표시
+                canvas.classList.add('hidden'); // 캔버스 숨김
+                controlsInfoDiv.classList.add('hidden'); // 정보 숨김
+                shieldInfoDiv.classList.add('hidden');
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // 캔버스 클리어
+                console.log("Restart requested. Showing start button.");
+            }
+        });
+         // 마우스 클릭 재시작 (PC 테스트용)
+         canvas.addEventListener('click', () => {
+            if (gameOver) {
+                gameOver = false;
+                isGameRunning = false;
+                startButton.classList.remove('hidden');
+                canvas.classList.add('hidden');
+                controlsInfoDiv.classList.add('hidden');
+                shieldInfoDiv.classList.add('hidden');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                console.log("Restart requested. Showing start button.");
+            }
+        });
+
+        // 초기에는 게임 루프를 시작하지 않고, 버튼 클릭을 기다림
+        // requestAnimationFrame(gameLoop); // 이 줄 제거 또는 주석 처리
+
+    </script>
+</body>
+</html>
