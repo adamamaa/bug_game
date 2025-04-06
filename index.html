@@ -549,9 +549,59 @@
              console.log("Reset to initial screen.");
         }
 
+        // PC용 키보드 컨트롤 테스트 (기기 센서 없을 때 사용)
+        window.addEventListener('keydown', function(e) {
+            // 게임이 실행 중일 때만 키보드 입력 처리
+            if (isGameRunning) {
+                if (e.key === 'ArrowLeft') {
+                    player.x = Math.max(player.radius, player.x - 10);
+                }
+                else if (e.key === 'ArrowRight') {
+                    player.x = Math.min(canvas.width - player.radius, player.x + 10);
+                }
+                else if (e.key === 'ArrowUp') {
+                    player.y = Math.max(player.radius, player.y - 10);
+                }
+                else if (e.key === 'ArrowDown') {
+                    player.y = Math.min(canvas.height - player.radius, player.y + 10);
+                }
+                else if (e.key === ' ' && !player.shieldActive && player.shieldCooldownTimer <= 0) {
+                    // 스페이스바로 보호막 활성화
+                    activateShield();
+                }
+            }
+        });
+
         // 초기 상태 설정
         resetToInitialScreen(); // 페이지 로드 시 초기 화면 표시
 
+        // 디버깅용 코드 - 적과 아이템을 수동으로 생성하여 테스트
+        function debugSpawnItems() {
+            // 적 생성 테스트
+            enemies.push({
+                x: canvas.width / 2,
+                y: 50,
+                radius: enemyRadius,
+                speed: 2,
+                type: 'normal',
+                color: 'red'
+            });
+            
+            // 아이템 생성 테스트
+            items.push({
+                x: canvas.width / 3,
+                y: 100,
+                speed: 1.5,
+                type: 'score',
+                radius: itemRadius,
+                color: 'lime'
+            });
+            
+            console.log("Debug items spawned:", enemies.length, items.length);
+        }
+
+        // 시작 후 3초 뒤에 디버깅용 아이템 생성 (필요시 활성화)
+        // setTimeout(debugSpawnItems, 3000);
     </script>
 </body>
 </html>
